@@ -1,17 +1,14 @@
-// icuwebview.odin — dynamic loader for icuwebview.dll
-// Code
-
+// icuwebview.odin -- dynamic loader for icuwebview.dll
 package icuwebview
 
 import "core:c"
 import "core:os"
 import "core:fmt"
+import "core:strings"
 import "core:sys/windows"
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-
 webview :: rawptr
-
 Error :: enum c.int {
     Missing_Dependency = -5,
     Canceled           = -4,
@@ -35,7 +32,42 @@ Native_Handle_Kind :: enum c.int {
     Browser_Controller = 1,
 }
 
+// ── Corners ───────────────────────────────────────────────────────────────────
+
+Corners :: struct {
+    TopLeft:     [2]c.int,
+    TopRight:    [2]c.int,
+    BottomLeft:  [2]c.int,
+    BottomRight: [2]c.int,
+}
+
+// Returns a Corners struct with screen-edge positions for a window of the
+// given size. Pass your width and height
+//
+// Usage:
+//   corners := ui.get_corners(520, 400)
+//   ui.set_position(corners.TopRight)
+get_corners :: proc(win_width, win_height: c.int) -> Corners {
+    screen_w := windows.GetSystemMetrics(windows.SM_CXSCREEN)
+    screen_h := windows.GetSystemMetrics(windows.SM_CYSCREEN)
+    right  := c.int(screen_w) - win_width
+    bottom := c.int(screen_h) - win_height
+    return Corners {
+        TopLeft     = {0,     0},
+        TopRight    = {right, 0},
+        BottomLeft  = {0,     bottom},
+        BottomRight = {right, bottom},
+    }
+}
+
 // ── Internal ──────────────────────────────────────────────────────────────────
+
+// ── String helper ─────────────────────────────────────────────────────────────
+@(private)
+_s :: #force_inline proc(s: string) -> cstring {
+    return strings.clone_to_cstring(s, context.temp_allocator)
+}
+
 
 @(private) _dll: windows.HMODULE
 
@@ -70,6 +102,7 @@ Native_Handle_Kind :: enum c.int {
 @(private) Fn_init              :: #type proc "c" (js: cstring, w: webview) -> Error
 @(private) Fn_eval              :: #type proc "c" (js: cstring, w: webview) -> Error
 @(private) Fn_bind              :: #type proc "c" (name: cstring, fn: proc "c"(seq, req: cstring, arg: rawptr), arg: rawptr, w: webview) -> Error
+@(private) Fn_eval_result       :: #type proc "c" (js: cstring, w: webview) -> cstring
 @(private) Fn_unbind            :: #type proc "c" (name: cstring, w: webview) -> Error
 // ↓ name is gone — seq alone is the lookup key now
 @(private) Fn_return_val        :: #type proc "c" (seq: cstring, result: cstring, status: c.int, w: webview) -> Error
@@ -100,6 +133,7 @@ Native_Handle_Kind :: enum c.int {
 @(private) _init:               Fn_init
 @(private) _eval:               Fn_eval
 @(private) _bind:               Fn_bind
+@(private) _eval_result:        Fn_eval_result
 @(private) _unbind:             Fn_unbind
 @(private) _return_val:         Fn_return_val
 @(private) _wait_until_closed:  Fn_wait_until_closed
@@ -112,8 +146,7 @@ webviewLoaded : bool = false
 
 load :: proc() -> bool {
     tmp := fmt.tprintf("%s\\icuwebview.dll", os.get_env("TEMP"))
-    if os.exists(tmp) do os.remove(tmp)
-    os.write_entire_file(tmp, icuwebview_dll_bytes)
+    if !os.exists(tmp) do os.write_entire_file(tmp, icuwebview_dll_bytes)
     return load_from(tmp)
 }
 
@@ -147,6 +180,7 @@ load_from :: proc(path: string) -> bool {
     _init               = auto_cast _fn("init")
     _eval               = auto_cast _fn("eval")
     _bind               = auto_cast _fn("webview_bind")  // ← exported name differs (Winsock clash)
+    _eval_result        = auto_cast _fn("eval_result")
     _unbind             = auto_cast _fn("unbind")
     _return_val         = auto_cast _fn("return_val")
     _wait_until_closed  = auto_cast _fn("wait_until_closed")
@@ -167,8 +201,8 @@ free_string :: proc(s: cstring) {
     if _free_string != nil do _free_string(s)
 }
 
-set_data_dir :: proc(path: cstring) {
-    if _set_data_dir != nil do _set_data_dir(path)
+set_data_dir :: proc(path: string) {
+    if _set_data_dir != nil do _set_data_dir(_s(path))
 }
 
 create :: proc(debug: bool, window: rawptr = nil, dontAutoLoad : bool = false) -> webview {
@@ -223,9 +257,9 @@ get_hwnd :: proc(w: webview = nil) -> int {
     return _get_hwnd(w)
 }
 
-set_title :: proc(title: cstring, w: webview = nil) -> Error {
+set_title :: proc(title: string, w: webview = nil) -> Error {
     if _set_title == nil do return .Unspecified
-    return _set_title(title, w)
+    return _set_title(_s(title), w)
 }
 
 set_size :: proc(width, height: c.int, hints: Hint = .None, w: webview = nil) -> Error {
@@ -233,9 +267,19 @@ set_size :: proc(width, height: c.int, hints: Hint = .None, w: webview = nil) ->
     return _set_size(width, height, hints, w)
 }
 
-set_position :: proc(x, y: c.int, w: webview = nil) -> Error {
+// set_position accepts either two ints or a corner from get_corners():
+//   ui.set_position(100, 200)
+//   ui.set_position(corners.BottomRight)
+set_position :: proc { _set_position_xy, _set_position_corner }
+
+_set_position_xy :: proc(x, y: c.int, w: webview = nil) -> Error {
     if _set_position == nil do return .Unspecified
     return _set_position(x, y, w)
+}
+
+_set_position_corner :: proc(pos: [2]c.int, w: webview = nil) -> Error {
+    if _set_position == nil do return .Unspecified
+    return _set_position(pos[0], pos[1], w)
 }
 
 set_resizable :: proc(resizable: bool, w: webview = nil) -> Error {
@@ -263,44 +307,55 @@ hide :: proc(w: webview = nil) -> Error {
     return _hide(w)
 }
 
-navigate :: proc(url: cstring, w: webview = nil) -> Error {
+navigate :: proc(url: string, w: webview = nil) -> Error {
     if _navigate == nil do return .Unspecified
-    return _navigate(url, w)
+    return _navigate(_s(url), w)
 }
 
-set_html :: proc(html: cstring, w: webview = nil) -> Error {
+set_html :: proc(html: string, w: webview = nil) -> Error {
     if _set_html == nil do return .Unspecified
-    return _set_html(html, w)
+    return _set_html(_s(html), w)
 }
 
-init :: proc(js: cstring, w: webview = nil) -> Error {
+init :: proc(js: string, w: webview = nil) -> Error {
     if _init == nil do return .Unspecified
-    return _init(js, w)
+    return _init(_s(js), w)
 }
 
-eval :: proc(js: cstring, w: webview = nil) -> Error {
+eval :: proc(js: string, w: webview = nil) -> Error {
     if _eval == nil do return .Unspecified
-    return _eval(js, w)
+    return _eval(_s(js), w)
 }
 
-// The js calls window._icu.name(args...) → to bind → bind calls return_val(seq, ...) to resolve.
+// Returns the result as a JSON-encoded Odin string (e.g. "42", "\"hello\"", "null").
+//   fmt.println(ui.eval_result("document.title"))  // → "My Odin App"
+eval_result :: proc(js: string, w: webview = nil) -> string {
+    if _eval_result == nil do return ""
+    raw := _eval_result(_s(js), w)
+    if raw == nil do return ""
+    result := strings.clone(string(raw))
+    free_string(raw)
+    return result
+}
+
+// JS calls window._icu.name(args...) → ur .bind event → you or ur bind call return_val(seq, ...)
+//
 //   bind("greet", proc "c"(seq, req: cstring, arg: rawptr) {
 //       return_val(seq, "\"Hello!\"")
 //   })
-bind :: proc(name: cstring, fn: proc "c"(seq, req: cstring, arg: rawptr), arg: rawptr = nil, w: webview = nil) -> Error {
+bind :: proc(name: string, fn: proc "c"(seq, req: cstring, arg: rawptr), arg: rawptr = nil, w: webview = nil) -> Error {
     if _bind == nil do return .Unspecified
-    return _bind(name, fn, arg, w)
+    return _bind(_s(name), fn, arg, w)
 }
 
-unbind :: proc(name: cstring, w: webview = nil) -> Error {
+unbind :: proc(name: string, w: webview = nil) -> Error {
     if _unbind == nil do return .Unspecified
-    return _unbind(name, w)
+    return _unbind(_s(name), w)
 }
 
-//
-// seq    — the sequence id received in your bind callback, pass it back as-is (this is unique for each call btw)
-// result — JSON value: "\"hello\"" / "42" = 42 / "true" = true / "false" = false / "null" / "[1,2,3]" / etc, ur welcome.
-// status — 0 = resolve (default), non-zero = reject (then the result is used as an error value)
+// seq    — the sequence id received in your bind callback, pass it back as-is
+// result — JSON value: "\"hello\"" / "42" / "true" / "null" / "[1,2,3]"
+// status — 0 = resolve (default), non-zero = reject (result used as error value)
 return_val :: proc(seq: cstring, result: cstring, status: c.int = 0, w: webview = nil) -> Error {
     if _return_val == nil do return .Unspecified
     return _return_val(seq, result, status, w)
