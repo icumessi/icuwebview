@@ -241,6 +241,26 @@ This applies to every function in the API — `set_size`, `set_html`, `bind`, `e
 
 ---
 
+## Strings
+
+All functions that accept text take a plain Odin `string` — no casting or manual conversion needed:
+
+```odin
+ui.set_title("My App")
+ui.set_html(my_html_string)
+ui.navigate("https://example.com")
+ui.bind("greet", greet_cb)
+ui.eval(`document.body.style.background = "#111"`)
+```
+
+The binding layer converts to `cstring` internally using the temp allocator before passing to the DLL. This is effectively free — a bump-pointer allocation plus a memcpy — and is completely invisible to the call site.
+
+The two exceptions that still use `cstring` are intentional:
+- `return_val(seq, result)` — `seq` arrives from a C callback parameter and goes straight back to the DLL; `result` is typically produced by `fmt.ctprintf` which already returns a `cstring`.
+- `free_string(s)` — receives a pointer allocated by the DLL itself.
+
+---
+
 ## API Reference
 
 ### Lifecycle
@@ -261,7 +281,7 @@ Signals the event loop to exit. Safe to call from any thread, including from ins
 
 ### Window
 
-#### `set_title(title: cstring, w: webview = nil) -> Error`
+#### `set_title(title: string, w: webview = nil) -> Error`
 Sets the window's title bar text.
 
 #### `set_size(width, height: c.int, hints: Hint = .None, w: webview = nil) -> Error`
@@ -272,7 +292,23 @@ Resizes the window. The `hints` argument controls behaviour:
 - `.Fixed` — sets size and disables resizing
 
 #### `set_position(x, y: c.int, w: webview = nil) -> Error`
-Moves the window to the given screen coordinates (in physical pixels).
+#### `set_position(pos: [2]c.int, w: webview = nil) -> Error`
+Moves the window to the given screen coordinates (in physical pixels). Accepts either two separate integers or a corner from `get_corners()`:
+
+```odin
+// Plain coordinates
+ui.set_position(300, 200)
+
+// Screen corners
+corners := ui.get_corners(520, 400)  // pass your window dimensions
+ui.set_position(corners.TopLeft)
+ui.set_position(corners.TopRight)
+ui.set_position(corners.BottomLeft)
+ui.set_position(corners.BottomRight)
+```
+
+#### `get_corners(win_width, win_height: c.int) -> Corners`
+Returns a `Corners` struct containing the four screen-edge positions for a window of the given size. Uses `GetSystemMetrics` to query the current screen resolution. The `Corners` struct has four fields — `TopLeft`, `TopRight`, `BottomLeft`, `BottomRight` — each a `[2]c.int` of `{x, y}`.
 
 #### `set_resizable(resizable: bool, w: webview = nil) -> Error`
 Enables or disables the user's ability to resize the window.
@@ -302,23 +338,35 @@ Returns a platform-specific handle. Currently `.Ui_Window` returns the `HWND`.
 
 ### Content
 
-#### `navigate(url: cstring, w: webview = nil) -> Error`
+#### `navigate(url: string, w: webview = nil) -> Error`
 Navigates the webview to a URL (e.g. `"https://example.com"` or `"file:///C:/page.html"`).
 
-#### `set_html(html: cstring, w: webview = nil) -> Error`
+#### `set_html(html: string, w: webview = nil) -> Error`
 Loads a raw HTML string directly. Always call `bind()` before `set_html()` — bind shims are re-injected automatically after each load, but they must be registered first.
 
-#### `eval(js: cstring, w: webview = nil) -> Error`
+#### `eval(js: string, w: webview = nil) -> Error`
 Evaluates a JavaScript string in the webview, fire-and-forget. Use this to push data from Odin into the page at any time.
 
-#### `init(js: cstring, w: webview = nil) -> Error`
+#### `eval(js: string, w: webview = nil) -> Error`
+Evaluates a JavaScript string in the webview, fire-and-forget. Use this to push data from Odin into the page at any time.
+
+#### `eval_result(js: string, w: webview = nil) -> string`
+Evaluates a JavaScript expression and blocks until the result comes back. The expression can use `await`. Returns a JSON-encoded Odin `string` — no manual memory management needed.
+
+```odin
+title  := ui.eval_result("document.title")        // → "My Odin App"
+count  := ui.eval_result("window._icu_counter")   // → "42"
+exists := ui.eval_result("typeof window.myFn")    // → ""function""
+```
+
+#### `init(js: string, w: webview = nil) -> Error`
 Evaluates a JavaScript string immediately. Intended for one-off injections; for persistent init scripts use `with_initialization_script` at the Rust level.
 
 ---
 
 ### Binding (Odin ↔ JS)
 
-#### `bind(name: cstring, fn: proc "c"(seq, req: cstring, arg: rawptr), arg: rawptr = nil, w: webview = nil) -> Error`
+#### `bind(name: string, fn: proc "c"(seq, req: cstring, arg: rawptr), arg: rawptr = nil, w: webview = nil) -> Error`
 Binds a JS function name to an Odin callback. After binding, JS can call `window._icu.<name>(args...)` and receive a Promise that resolves when you call `return_val`.
 
 Callback signature:
@@ -334,7 +382,7 @@ my_cb :: proc "c" (seq, req: cstring, arg: rawptr) {
 
 Returns `.Duplicate` if a binding with that name already exists.
 
-#### `unbind(name: cstring, w: webview = nil) -> Error`
+#### `unbind(name: string, w: webview = nil) -> Error`
 Removes a binding. The JS-side function is deleted from `window._icu`. Returns `.Not_Found` if no binding with that name exists.
 
 #### `return_val(seq: cstring, result: cstring, status: c.int = 0, w: webview = nil) -> Error`
@@ -356,7 +404,7 @@ Calls a function synchronously with the webview handle and an arbitrary pointer.
 #### `wait_until_closed()`
 Blocks the calling thread until the window is closed. Use this when `run()` is on a background thread and you need the main thread to wait.
 
-#### `set_data_dir(path: cstring)`
+#### `set_data_dir(path: string)`
 Sets the directory used for persistent browser data (cookies, cache, localStorage). Must be called **before** `create()`. Pass `nil` to revert to the default behaviour, which uses a temporary directory that is deleted when `destroy()` is called.
 
 #### `free_string(s: cstring)`
