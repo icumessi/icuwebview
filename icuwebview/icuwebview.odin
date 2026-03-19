@@ -356,9 +356,9 @@ unbind :: proc(name: string, w: webview = nil) -> Error {
 // seq    — the sequence id received in your bind callback, pass it back as-is
 // result — JSON value: "\"hello\"" / "42" / "true" / "null" / "[1,2,3]"
 // status — 0 = resolve (default), non-zero = reject (result used as error value)
-return_val :: proc(seq: cstring, result: cstring, status: c.int = 0, w: webview = nil) -> Error {
+return_val :: proc(seq: cstring, result: string, status: c.int = 0, w: webview = nil) -> Error {
     if _return_val == nil do return .Unspecified
-    return _return_val(seq, result, status, w)
+    return _return_val(seq, _s(result), status, w)
 }
 
 wait_until_closed :: proc() {
