@@ -147,7 +147,8 @@ main :: proc() {
         return
     }
 
-    defer ui.destroy()
+    defer ui.destroy() // destroy the ui and bindings
+    defer ui.unload() // unload the dll library
     defer ui.run() // since we call this after
 
     app := App{}
