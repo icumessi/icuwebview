@@ -63,11 +63,13 @@ get_corners :: proc(win_width, win_height: c.int) -> Corners {
 }
 
 // ── String helper ─────────────────────────────────────────────────────────────
+
 @(private)
 _s :: #force_inline proc(s: string) -> cstring {
     return strings.clone_to_cstring(s, context.temp_allocator)
 }
 
+// ── Internal ──────────────────────────────────────────────────────────────────
 
 @(private) _dll: windows.HMODULE
 
@@ -79,68 +81,69 @@ _s :: #force_inline proc(s: string) -> cstring {
 
 // ── Function pointer types ────────────────────────────────────────────────────
 
-@(private) Fn_free_string       :: #type proc "c" (s: cstring)
-@(private) Fn_set_data_dir      :: #type proc "c" (path: cstring)
-@(private) Fn_create            :: #type proc "c" (debug: bool, window: rawptr) -> webview
-@(private) Fn_destroy           :: #type proc "c" (w: webview) -> Error
-@(private) Fn_run               :: #type proc "c" (w: webview) -> Error
-@(private) Fn_terminate         :: #type proc "c" (w: webview) -> Error
-@(private) Fn_dispatch          :: #type proc "c" (fn: proc "c"(w: webview, arg: rawptr), arg: rawptr, w: webview) -> Error
-@(private) Fn_get_window        :: #type proc "c" (w: webview) -> rawptr
-@(private) Fn_get_native_handle :: #type proc "c" (kind: Native_Handle_Kind, w: webview) -> rawptr
-@(private) Fn_get_hwnd          :: #type proc "c" (w: webview) -> int
-@(private) Fn_set_title         :: #type proc "c" (title: cstring, w: webview) -> Error
-@(private) Fn_set_size          :: #type proc "c" (width, height: c.int, hints: Hint, w: webview) -> Error
-@(private) Fn_set_position      :: #type proc "c" (x, y: c.int, w: webview) -> Error
-@(private) Fn_set_resizable     :: #type proc "c" (resizable: bool, w: webview) -> Error
-@(private) Fn_set_frameless     :: #type proc "c" (frameless: bool, w: webview) -> Error
-@(private) Fn_set_timeout       :: #type proc "c" (seconds: u32, w: webview) -> Error
-@(private) Fn_show              :: #type proc "c" (w: webview) -> Error
-@(private) Fn_hide              :: #type proc "c" (w: webview) -> Error
-@(private) Fn_navigate          :: #type proc "c" (url: cstring, w: webview) -> Error
-@(private) Fn_set_html          :: #type proc "c" (html: cstring, w: webview) -> Error
-@(private) Fn_init              :: #type proc "c" (js: cstring, w: webview) -> Error
-@(private) Fn_eval              :: #type proc "c" (js: cstring, w: webview) -> Error
-@(private) Fn_bind              :: #type proc "c" (name: cstring, fn: proc "c"(seq, req: cstring, arg: rawptr), arg: rawptr, w: webview) -> Error
-@(private) Fn_eval_result       :: #type proc "c" (js: cstring, w: webview) -> cstring
-@(private) Fn_unbind            :: #type proc "c" (name: cstring, w: webview) -> Error
-// ↓ name is gone — seq alone is the lookup key now
-@(private) Fn_return_val        :: #type proc "c" (seq: cstring, result: cstring, status: c.int, w: webview) -> Error
-@(private) Fn_is_visible        :: #type proc "c" (w: webview) -> bool
-@(private) Fn_is_running        :: #type proc "c" () -> bool
-@(private) Fn_wait_until_closed :: #type proc "c" ()
+@(private) Fn_free_string        :: #type proc "c" (s: cstring)
+@(private) Fn_set_data_dir       :: #type proc "c" (path: cstring)
+@(private) Fn_create             :: #type proc "c" (debug: bool, window: rawptr) -> webview
+@(private) Fn_destroy            :: #type proc "c" (w: webview) -> Error
+@(private) Fn_run                :: #type proc "c" (w: webview) -> Error
+@(private) Fn_terminate          :: #type proc "c" (w: webview) -> Error
+@(private) Fn_dispatch           :: #type proc "c" (fn: proc "c"(w: webview, arg: rawptr), arg: rawptr, w: webview) -> Error
+@(private) Fn_get_window         :: #type proc "c" (w: webview) -> rawptr
+@(private) Fn_get_native_handle  :: #type proc "c" (kind: Native_Handle_Kind, w: webview) -> rawptr
+@(private) Fn_get_hwnd           :: #type proc "c" (w: webview) -> int
+@(private) Fn_set_title          :: #type proc "c" (title: cstring, w: webview) -> Error
+@(private) Fn_set_size           :: #type proc "c" (width, height: c.int, hints: Hint, w: webview) -> Error
+@(private) Fn_set_position       :: #type proc "c" (x, y: c.int, w: webview) -> Error
+@(private) Fn_set_resizable      :: #type proc "c" (resizable: bool, w: webview) -> Error
+@(private) Fn_set_frameless      :: #type proc "c" (frameless: bool, w: webview) -> Error
+@(private) Fn_set_timeout        :: #type proc "c" (seconds: u32, w: webview) -> Error
+@(private) Fn_show               :: #type proc "c" (w: webview) -> Error
+@(private) Fn_hide               :: #type proc "c" (w: webview) -> Error
+@(private) Fn_navigate           :: #type proc "c" (url: cstring, w: webview) -> Error
+@(private) Fn_set_html           :: #type proc "c" (html: cstring, w: webview) -> Error
+@(private) Fn_init               :: #type proc "c" (js: cstring, w: webview) -> Error
+@(private) Fn_eval               :: #type proc "c" (js: cstring, w: webview) -> Error
+@(private) Fn_eval_result        :: #type proc "c" (js: cstring, w: webview) -> cstring
+@(private) Fn_bind               :: #type proc "c" (name: cstring, fn: proc "c"(seq, req: cstring, arg: rawptr), arg: rawptr, w: webview) -> Error
+@(private) Fn_unbind             :: #type proc "c" (name: cstring, w: webview) -> Error
+@(private) Fn_return_val         :: #type proc "c" (seq: cstring, result: cstring, status: c.int, w: webview) -> Error
+@(private) Fn_wait_for_page_load :: #type proc "c" (timeout_ms: u32, w: webview) -> bool
+@(private) Fn_is_visible         :: #type proc "c" (w: webview) -> bool
+@(private) Fn_is_running         :: #type proc "c" () -> bool
+@(private) Fn_wait_until_closed  :: #type proc "c" ()
 
 // ── Loaded pointers ───────────────────────────────────────────────────────────
 
-@(private) _free_string:        Fn_free_string
-@(private) _set_data_dir:       Fn_set_data_dir
-@(private) _create:             Fn_create
-@(private) _destroy:            Fn_destroy
-@(private) _run:                Fn_run
-@(private) _terminate:          Fn_terminate
-@(private) _dispatch:           Fn_dispatch
-@(private) _get_window:         Fn_get_window
-@(private) _get_native_handle:  Fn_get_native_handle
-@(private) _get_hwnd:           Fn_get_hwnd
-@(private) _set_title:          Fn_set_title
-@(private) _set_size:           Fn_set_size
-@(private) _set_position:       Fn_set_position
-@(private) _set_resizable:      Fn_set_resizable
-@(private) _set_frameless:      Fn_set_frameless
-@(private) _set_timeout:        Fn_set_timeout
-@(private) _show:               Fn_show
-@(private) _hide:               Fn_hide
-@(private) _navigate:           Fn_navigate
-@(private) _set_html:           Fn_set_html
-@(private) _init:               Fn_init
-@(private) _eval:               Fn_eval
-@(private) _bind:               Fn_bind
-@(private) _eval_result:        Fn_eval_result
-@(private) _unbind:             Fn_unbind
-@(private) _return_val:         Fn_return_val
-@(private) _is_visible:         Fn_is_visible
-@(private) _is_running:         Fn_is_running
-@(private) _wait_until_closed:  Fn_wait_until_closed
+@(private) _free_string:         Fn_free_string
+@(private) _set_data_dir:        Fn_set_data_dir
+@(private) _create:              Fn_create
+@(private) _destroy:             Fn_destroy
+@(private) _run:                 Fn_run
+@(private) _terminate:           Fn_terminate
+@(private) _dispatch:            Fn_dispatch
+@(private) _get_window:          Fn_get_window
+@(private) _get_native_handle:   Fn_get_native_handle
+@(private) _get_hwnd:            Fn_get_hwnd
+@(private) _set_title:           Fn_set_title
+@(private) _set_size:            Fn_set_size
+@(private) _set_position:        Fn_set_position
+@(private) _set_resizable:       Fn_set_resizable
+@(private) _set_frameless:       Fn_set_frameless
+@(private) _set_timeout:         Fn_set_timeout
+@(private) _show:                Fn_show
+@(private) _hide:                Fn_hide
+@(private) _navigate:            Fn_navigate
+@(private) _set_html:            Fn_set_html
+@(private) _init:                Fn_init
+@(private) _eval:                Fn_eval
+@(private) _eval_result:         Fn_eval_result
+@(private) _bind:                Fn_bind
+@(private) _unbind:              Fn_unbind
+@(private) _return_val:          Fn_return_val
+@(private) _wait_for_page_load:  Fn_wait_for_page_load
+@(private) _is_visible:          Fn_is_visible
+@(private) _is_running:          Fn_is_running
+@(private) _wait_until_closed:   Fn_wait_until_closed
 
 // ── load / load_from / unload ─────────────────────────────────────────────────
 
@@ -185,10 +188,11 @@ load_from :: proc(path: string) -> bool {
     _set_html           = auto_cast _fn("set_html")
     _init               = auto_cast _fn("init")
     _eval               = auto_cast _fn("eval")
-    _bind               = auto_cast _fn("webview_bind")  // ← exported name differs (Winsock clash)
     _eval_result        = auto_cast _fn("eval_result")
+    _bind               = auto_cast _fn("webview_bind")  // exported as webview_bind (Winsock clash)
     _unbind             = auto_cast _fn("unbind")
     _return_val         = auto_cast _fn("return_val")
+    _wait_for_page_load = auto_cast _fn("wait_for_page_load")
     _is_visible         = auto_cast _fn("is_visible")
     _is_running         = auto_cast _fn("is_running")
     _wait_until_closed  = auto_cast _fn("wait_until_closed")
@@ -346,7 +350,7 @@ eval_result :: proc(js: string, w: webview = nil) -> string {
     return result
 }
 
-// JS calls window._icu.name(args...) -> server calls ur bind -> you must call return_val(seq, ...) to resolve, else it may yeild forever
+// JS calls window._icu.name(args...) -> server calls ur bind -> you must call return_val(seq, ...) to resolve, else it yeilds for 15s or depending on set_timeout
 //
 //   bind("greet", proc "c"(seq, req: cstring, arg: rawptr) {
 //       return_val(seq, "\"Hello!\"")
@@ -367,6 +371,21 @@ unbind :: proc(name: string, w: webview = nil) -> Error {
 return_val :: proc(seq: cstring, result: cstring, status: c.int = 0, w: webview = nil) -> Error {
     if _return_val == nil do return .Unspecified
     return _return_val(seq, result, status, w)
+}
+
+// Blocks until the page's DOMContentLoaded event fires, or until timeout_ms elapses.
+// Call this after set_html() or navigate() to ensure the DOM and all bind shims
+// Example:
+//   ui.set_html(HTML)
+//   if !ui.wait_for_page_load() {
+//       fmt.eprintln("page load timed out")
+//   }
+//   ui.eval(`document.getElementById("status").textContent = "Ready!"`)
+// timeout_ms - how long to wait in milliseconds (default 5000). Pass 0 to wait forever.
+// Do NOT call from inside a bind callback — it will deadlock.
+wait_for_page_load :: proc(timeout_ms: u32 = 5000, w: webview = nil) -> bool {
+    if _wait_for_page_load == nil do return false
+    return _wait_for_page_load(timeout_ms, w)
 }
 
 is_visible :: proc(w: webview = nil) -> bool {
