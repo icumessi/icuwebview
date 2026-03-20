@@ -1,4 +1,4 @@
-// icuwebview.odin -- dynamic loader for icuwebview.dll
+// icuwebview.odin - dynamic loader for icuwebview.dll
 package icuwebview
 
 import "core:c"
@@ -8,7 +8,9 @@ import "core:strings"
 import "core:sys/windows"
 
 // ── Types ─────────────────────────────────────────────────────────────────────
+
 webview :: rawptr
+
 Error :: enum c.int {
     Missing_Dependency = -5,
     Canceled           = -4,
@@ -42,10 +44,10 @@ Corners :: struct {
 }
 
 // Returns a Corners struct with screen-edge positions for a window of the
-// given size. Pass your width and height
+// given size. Pass your width and height (same values you gave set_size).
 //
-// Usage:
-//   corners := ui.get_corners(520, 400)
+// Example:
+//   corners := ui.get_corners(520, 400) // these would be the values you used in set_size
 //   ui.set_position(corners.TopRight)
 get_corners :: proc(win_width, win_height: c.int) -> Corners {
     screen_w := windows.GetSystemMetrics(windows.SM_CXSCREEN)
@@ -59,8 +61,6 @@ get_corners :: proc(win_width, win_height: c.int) -> Corners {
         BottomRight = {right, bottom},
     }
 }
-
-// ── Internal ──────────────────────────────────────────────────────────────────
 
 // ── String helper ─────────────────────────────────────────────────────────────
 @(private)
@@ -106,6 +106,8 @@ _s :: #force_inline proc(s: string) -> cstring {
 @(private) Fn_unbind            :: #type proc "c" (name: cstring, w: webview) -> Error
 // ↓ name is gone — seq alone is the lookup key now
 @(private) Fn_return_val        :: #type proc "c" (seq: cstring, result: cstring, status: c.int, w: webview) -> Error
+@(private) Fn_is_visible        :: #type proc "c" (w: webview) -> bool
+@(private) Fn_is_running        :: #type proc "c" () -> bool
 @(private) Fn_wait_until_closed :: #type proc "c" ()
 
 // ── Loaded pointers ───────────────────────────────────────────────────────────
@@ -136,6 +138,8 @@ _s :: #force_inline proc(s: string) -> cstring {
 @(private) _eval_result:        Fn_eval_result
 @(private) _unbind:             Fn_unbind
 @(private) _return_val:         Fn_return_val
+@(private) _is_visible:         Fn_is_visible
+@(private) _is_running:         Fn_is_running
 @(private) _wait_until_closed:  Fn_wait_until_closed
 
 // ── load / load_from / unload ─────────────────────────────────────────────────
@@ -146,7 +150,9 @@ webviewLoaded : bool = false
 
 load :: proc() -> bool {
     tmp := fmt.tprintf("%s\\icuwebview.dll", os.get_env("TEMP"))
-    if !os.exists(tmp) do os.write_entire_file(tmp, icuwebview_dll_bytes)
+    if !os.exists(tmp) do os.remove(tmp)
+    // rewrite for future updates
+    os.write_entire_file(tmp, icuwebview_dll_bytes)
     return load_from(tmp)
 }
 
@@ -183,6 +189,8 @@ load_from :: proc(path: string) -> bool {
     _eval_result        = auto_cast _fn("eval_result")
     _unbind             = auto_cast _fn("unbind")
     _return_val         = auto_cast _fn("return_val")
+    _is_visible         = auto_cast _fn("is_visible")
+    _is_running         = auto_cast _fn("is_running")
     _wait_until_closed  = auto_cast _fn("wait_until_closed")
 
     return true
@@ -327,8 +335,8 @@ eval :: proc(js: string, w: webview = nil) -> Error {
     return _eval(_s(js), w)
 }
 
-// Returns the result as a JSON-encoded Odin string (e.g. "42", "\"hello\"", "null").
-//   fmt.println(ui.eval_result("document.title"))  // → "My Odin App"
+// This returns the result as a JSON-encoded Odin string (e.g. "42", "\"hello\"", "null").
+// Do NOT call this from inside a bind callback! It's gonna deadlock.
 eval_result :: proc(js: string, w: webview = nil) -> string {
     if _eval_result == nil do return ""
     raw := _eval_result(_s(js), w)
@@ -338,7 +346,7 @@ eval_result :: proc(js: string, w: webview = nil) -> string {
     return result
 }
 
-// JS calls window._icu.name(args...) → ur .bind event → you or ur bind call return_val(seq, ...)
+// JS calls window._icu.name(args...) -> server calls ur bind -> you must call return_val(seq, ...) to resolve, else it may yeild forever
 //
 //   bind("greet", proc "c"(seq, req: cstring, arg: rawptr) {
 //       return_val(seq, "\"Hello!\"")
@@ -353,15 +361,22 @@ unbind :: proc(name: string, w: webview = nil) -> Error {
     return _unbind(_s(name), w)
 }
 
-// seq    — the sequence id received in your bind callback, pass it back as-is
-// result — JSON value: "\"hello\"" / "42" / "true" / "null" / "[1,2,3]"
-// status — 0 = resolve (default), non-zero = reject (result used as error value)
-return_val :: proc(seq: cstring, result: string, status: c.int = 0, w: webview = nil) -> Error {
+// seq    - the sequence id received in your bind callback, pass it back as-is
+// result - JSON value: "\"hello\"" / "42" / "true" / "null" / "[1,2,3]"
+// status - 0 = resolve (default), if ur returning anything other than 0, it means an error
+return_val :: proc(seq: cstring, result: cstring, status: c.int = 0, w: webview = nil) -> Error {
     if _return_val == nil do return .Unspecified
-    result := result
-    // If the result is nothing, just respond with empty json
-    if len(result) == 0 do result = "{}";
-    return _return_val(seq, _s(result), status, w)
+    return _return_val(seq, result, status, w)
+}
+
+is_visible :: proc(w: webview = nil) -> bool {
+    if _is_visible == nil do return false
+    return _is_visible(w)
+}
+
+is_running :: proc() -> bool {
+    if _is_running == nil do return false
+    return _is_running()
 }
 
 wait_until_closed :: proc() {
