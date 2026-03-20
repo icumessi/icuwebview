@@ -358,6 +358,9 @@ unbind :: proc(name: string, w: webview = nil) -> Error {
 // status — 0 = resolve (default), non-zero = reject (result used as error value)
 return_val :: proc(seq: cstring, result: string, status: c.int = 0, w: webview = nil) -> Error {
     if _return_val == nil do return .Unspecified
+    result := result
+    // If the result is nothing, just respond with empty json
+    if len(result) == 0 do result = "{}";
     return _return_val(seq, _s(result), status, w)
 }
 
