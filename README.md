@@ -7,7 +7,7 @@ Built on [wry](https://github.com/tauri-apps/wry) + [tao](https://github.com/tau
 
 ---
 
-## Building
+## What the DLL is built with (through rust so that it can be a be a relatively small dll)
 
 ```toml
 [package]
@@ -20,18 +20,19 @@ name       = "icuwebview"
 crate-type = ["cdylib"]
 
 [profile.release]
-opt-level     = "z"  # optimize for size
+opt-level     = "z"
 lto           = true
 codegen-units = 1
 strip         = true
 
 [dependencies]
-wry      = "0.46"
-tao      = "0.30"
+wry       = "0.46"
+tao       = "0.30"
 tiny_http = "0.12"
+webview2-com-sys = "0.X.X"
 
-[dependencies.windows]
-version = "0.58"
+[dependencies.windows-sys]
+version = "0.59"
 features = [
     "Win32_Foundation",
     "Win32_Graphics_Gdi",
