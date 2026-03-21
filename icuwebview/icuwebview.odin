@@ -107,7 +107,8 @@ _s :: #force_inline proc(s: string) -> cstring {
 @(private) Fn_bind               :: #type proc "c" (name: cstring, fn: proc "c"(seq, req: cstring, arg: rawptr), arg: rawptr, w: webview) -> Error
 @(private) Fn_unbind             :: #type proc "c" (name: cstring, w: webview) -> Error
 @(private) Fn_return_val         :: #type proc "c" (seq: cstring, result: cstring, status: c.int, w: webview) -> Error
-@(private) Fn_wait_for_page_load :: #type proc "c" (timeout_ms: u32, w: webview) -> bool
+@(private) Fn_set_swipe_navigation :: #type proc "c" (enabled: bool, w: webview) -> Error
+@(private) Fn_wait_for_page_load   :: #type proc "c" (timeout_ms: u32, w: webview) -> bool
 @(private) Fn_is_visible         :: #type proc "c" (w: webview) -> bool
 @(private) Fn_is_running         :: #type proc "c" () -> bool
 @(private) Fn_wait_until_closed  :: #type proc "c" ()
@@ -140,7 +141,8 @@ _s :: #force_inline proc(s: string) -> cstring {
 @(private) _bind:                Fn_bind
 @(private) _unbind:              Fn_unbind
 @(private) _return_val:          Fn_return_val
-@(private) _wait_for_page_load:  Fn_wait_for_page_load
+@(private) _set_swipe_navigation: Fn_set_swipe_navigation
+@(private) _wait_for_page_load:   Fn_wait_for_page_load
 @(private) _is_visible:          Fn_is_visible
 @(private) _is_running:          Fn_is_running
 @(private) _wait_until_closed:   Fn_wait_until_closed
@@ -192,7 +194,8 @@ load_from :: proc(path: string) -> bool {
     _bind               = auto_cast _fn("webview_bind")  // exported as webview_bind (Winsock clash)
     _unbind             = auto_cast _fn("unbind")
     _return_val         = auto_cast _fn("return_val")
-    _wait_for_page_load = auto_cast _fn("wait_for_page_load")
+    _set_swipe_navigation = auto_cast _fn("set_swipe_navigation")
+    _wait_for_page_load   = auto_cast _fn("wait_for_page_load")
     _is_visible         = auto_cast _fn("is_visible")
     _is_running         = auto_cast _fn("is_running")
     _wait_until_closed  = auto_cast _fn("wait_until_closed")
@@ -373,8 +376,21 @@ return_val :: proc(seq: cstring, result: cstring, status: c.int = 0, w: webview 
     return _return_val(seq, result, status, w)
 }
 
+// Enable or disable the swipe-to-navigate gesture (dragging from the left/right
+// screen edge to go back/forward). WebView2 enables this by default.
+// Call any time after create().
+//
+// Example:
+//   ui.set_swipe_navigation(false)  // disable — recommended for app-style UIs
+//   ui.set_swipe_navigation(true)   // re-enable if you want browser-like behaviour
+set_swipe_navigation :: proc(enabled: bool, w: webview = nil) -> Error {
+    if _set_swipe_navigation == nil do return .Unspecified
+    return _set_swipe_navigation(enabled, w)
+}
+
 // Blocks until the page's DOMContentLoaded event fires, or until timeout_ms elapses.
 // Call this after set_html() or navigate() to ensure the DOM and all bind shims
+//
 // Example:
 //   ui.set_html(HTML)
 //   if !ui.wait_for_page_load() {
