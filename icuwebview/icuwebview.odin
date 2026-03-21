@@ -1,4 +1,5 @@
-// icuwebview.odin - dynamic loader for icuwebview.dll
+// icuwebview.odin - dynamic loader for icuwebview.dll but written in Odin programming language
+// You can convert this into any other programming language too.
 package icuwebview
 
 import "core:c"
@@ -385,7 +386,6 @@ return_val :: proc(seq: cstring, result: cstring, status: c.int = 0, w: webview 
 // Enable or disable the swipe-to-navigate gesture (dragging from the left/right
 // screen edge to go back/forward). WebView2 enables this by default.
 // Call any time after create().
-//
 // Example:
 //   ui.set_swipe_navigation(false)  // disable — recommended for app-style UIs
 //   ui.set_swipe_navigation(true)   // re-enable if you want browser-like behaviour
