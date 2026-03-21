@@ -104,7 +104,7 @@ _s :: #force_inline proc(s: string) -> cstring {
 @(private) Fn_init               :: #type proc "c" (js: cstring, w: webview) -> Error
 @(private) Fn_eval               :: #type proc "c" (js: cstring, w: webview) -> Error
 @(private) Fn_eval_result        :: #type proc "c" (js: cstring, w: webview) -> cstring
-@(private) Fn_bind               :: #type proc "c" (name: cstring, fn: proc "c"(seq, req: cstring, arg: rawptr), arg: rawptr, w: webview) -> Error
+@(private) Fn_bind               :: #type proc "c" (name: cstring, fn: proc "c"(seq, req: cstring, arg: rawptr), arg: rawptr, stay_on_reload: bool, w: webview) -> Error
 @(private) Fn_unbind             :: #type proc "c" (name: cstring, w: webview) -> Error
 @(private) Fn_return_val         :: #type proc "c" (seq: cstring, result: cstring, status: c.int, w: webview) -> Error
 @(private) Fn_set_swipe_navigation :: #type proc "c" (enabled: bool, w: webview) -> Error
@@ -355,12 +355,18 @@ eval_result :: proc(js: string, w: webview = nil) -> string {
 
 // JS calls window._icu.name(args...) -> server calls ur bind -> you must call return_val(seq, ...) to resolve, else it yeilds for 15s or depending on set_timeout
 //
+// stay_on_reload: if true, the binding persists across navigate() and set_html() calls
+//                by registering the shim as an initialization script. Default is false,
+//                which only re-injects after set_html() (not navigate()).
+//
 //   bind("greet", proc "c"(seq, req: cstring, arg: rawptr) {
 //       return_val(seq, "\"Hello!\"")
 //   })
-bind :: proc(name: string, fn: proc "c"(seq, req: cstring, arg: rawptr), arg: rawptr = nil, w: webview = nil) -> Error {
+//
+//   bind("greet", greet_cb, stay_on_reload = true)  // survives navigate()
+bind :: proc(name: string, fn: proc "c"(seq, req: cstring, arg: rawptr), arg: rawptr = nil, stay_on_reload: bool = false, w: webview = nil) -> Error {
     if _bind == nil do return .Unspecified
-    return _bind(_s(name), fn, arg, w)
+    return _bind(_s(name), fn, arg, stay_on_reload, w)
 }
 
 unbind :: proc(name: string, w: webview = nil) -> Error {
@@ -389,16 +395,15 @@ set_swipe_navigation :: proc(enabled: bool, w: webview = nil) -> Error {
 }
 
 // Blocks until the page's DOMContentLoaded event fires, or until timeout_ms elapses.
-// Call this after set_html() or navigate() to ensure the DOM and all bind shims
-//
+// timeout_ms - how long to wait in milliseconds (default 5000). Pass 0 to wait forever.
+// Returns true if the page loaded in time, false on timeout.
+// Do NOT call from inside a bind callback — it will deadlock.
 // Example:
 //   ui.set_html(HTML)
 //   if !ui.wait_for_page_load() {
 //       fmt.eprintln("page load timed out")
 //   }
 //   ui.eval(`document.getElementById("status").textContent = "Ready!"`)
-// timeout_ms - how long to wait in milliseconds (default 5000). Pass 0 to wait forever.
-// Do NOT call from inside a bind callback — it will deadlock.
 wait_for_page_load :: proc(timeout_ms: u32 = 5000, w: webview = nil) -> bool {
     if _wait_for_page_load == nil do return false
     return _wait_for_page_load(timeout_ms, w)
