@@ -2,51 +2,10 @@
 > 
 # icuwebview
 
-A lightweight Rust DLL that lets you open a native webview window from **any language** that can call C-compatible DLLs. Ships with first-class Odin bindings.
+A lightweight Rust DLL that lets you open a native webview window from **any language** that can call C-compatible DLLs.
+You can find the bindings for Odin Language in this repository.
 
-Built on [wry](https://github.com/tauri-apps/wry) + [tao](https://github.com/tauri-apps/tao). JS↔native communication goes over a tiny local HTTP server — no IPC bridge, no `postMessage`, just plain `fetch()`. Each call runs on its own thread so rapid concurrent clicks never queue up.
-
----
-
-## Building
-
-```toml
-[package]
-name    = "icuwebview"
-version = "0.1.0"
-edition = "2021"
-
-[lib]
-name       = "icuwebview"
-crate-type = ["cdylib"]
-
-[profile.release]
-opt-level     = "z"  # optimize for size
-lto           = true
-codegen-units = 1
-strip         = true
-
-[dependencies]
-wry              = "0.46"
-tao              = "0.30"
-tiny_http        = "0.12"
-webview2-com-sys = "0.33.0"
-windows-core     = "0.58.0"
-
-[dependencies.windows-sys]
-version = "0.59"
-features = [
-    "Win32_Foundation",
-    "Win32_Graphics_Gdi",
-    "Win32_System_LibraryLoader",
-    "Win32_System_Threading",
-    "Win32_UI_WindowsAndMessaging",
-]
-```
-
-> `opt-level = "z"` has no noticeable effect on performance for a webview app — rendering is handled by a separate WebView2 process and all Rust hot paths are I/O-bound (channel waits, mutex locks), not CPU-bound.
-
----
+Built on [wry](https://github.com/tauri-apps/wry) + [tao](https://github.com/tauri-apps/tao). JS↔native communication goes over a IPC bridge, and each call runs on its own thread queuing doesn't block up majority of actions.
 
 ## Quick Start
 
@@ -126,11 +85,11 @@ main :: proc() {
 
 ### How binding works
 
-`ui.bind("greet", greet_cb, &app)` injects a JS shim that makes `window._icu.greet(args...)` available. When called from JS it POSTs to the local server, your callback fires, and `return_val` resolves the Promise. Calls that arrive before the shim is ready are queued and flushed automatically. If a binding isn't registered within **2 seconds**, queued calls are rejected with a clear error.
+`ui.bind("greet", greet_cb, &app)` injects a JS shim that makes `window._icu.greet(args...)` available. Calls that arrive before the shim is ready are queued and flushed automatically. If a binding isn't registered within **2 seconds**, queued calls are rejected with a clear error.
 
 ### Bindings and page changes
 
-Whether a binding survives a page change depends on the `stay_on_reload` parameter and how you change the page:
+To make a bind survive through a page refresh or redirection, specify `stay_on_reload` parameter and how you change the page:
 
 | | `set_html()` | `navigate()` |
 |---|---|---|
