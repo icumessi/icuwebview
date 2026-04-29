@@ -1,4 +1,4 @@
-// icuwebview.odin - dynamic loader for icuwebview.dll but written in Odin programming language
+// icuwebview.odin - dynamic loader for icuwebview.dll
 // You can convert this into any other programming language too.
 package icuwebview
 
@@ -113,6 +113,7 @@ _s :: #force_inline proc(s: string) -> cstring {
 @(private) Fn_is_visible         :: #type proc "c" (w: webview) -> bool
 @(private) Fn_is_running         :: #type proc "c" () -> bool
 @(private) Fn_wait_until_closed  :: #type proc "c" ()
+@(private) Fn_open_devtools      :: #type proc "c" (w: webview) -> Error   // <-- NEW
 
 // ── Loaded pointers ───────────────────────────────────────────────────────────
 
@@ -147,6 +148,7 @@ _s :: #force_inline proc(s: string) -> cstring {
 @(private) _is_visible:          Fn_is_visible
 @(private) _is_running:          Fn_is_running
 @(private) _wait_until_closed:   Fn_wait_until_closed
+@(private) _open_devtools:       Fn_open_devtools                     // <-- NEW
 
 // ── load / load_from / unload ─────────────────────────────────────────────────
 
@@ -156,7 +158,7 @@ webviewLoaded : bool = false
 
 load :: proc() -> bool {
     tmp := fmt.tprintf("%s\\icuwebview.dll", os.get_env("TEMP"))
-    if !os.exists(tmp) do os.remove(tmp)
+    if os.exists(tmp) do os.remove(tmp)
     // rewrite for future updates
     os.write_entire_file(tmp, icuwebview_dll_bytes)
     return load_from(tmp)
@@ -200,6 +202,7 @@ load_from :: proc(path: string) -> bool {
     _is_visible         = auto_cast _fn("is_visible")
     _is_running         = auto_cast _fn("is_running")
     _wait_until_closed  = auto_cast _fn("wait_until_closed")
+    _open_devtools      = auto_cast _fn("open_devtools")   // <-- NEW
 
     return true
 }
@@ -421,4 +424,10 @@ is_running :: proc() -> bool {
 
 wait_until_closed :: proc() {
     if _wait_until_closed != nil do _wait_until_closed()
+}
+
+// ── NEW: Open Developer Tools ─────────────────────────────────────────────────
+open_devtools :: proc(w: webview = nil) -> Error {
+    if _open_devtools == nil do return .Unspecified
+    return _open_devtools(w)
 }
